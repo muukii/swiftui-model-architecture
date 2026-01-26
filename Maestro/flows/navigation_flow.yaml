@@ -1,0 +1,21 @@
+appId: app.muukii.ModelArchitecture
+---
+- launchApp
+- assertVisible: "Home"
+- assertVisible: "Item 1"
+- assertVisible: "Item 2"
+- assertVisible: "Item 3"
+
+# Open detail for Item 2
+- tapOn: "Item 2"
+- assertVisible: "Detail View"
+- assertVisible: "Item 2"
+
+# Close and open another
+- tapOn: "Close"
+- assertNotVisible: "Detail View"
+
+- tapOn: "Item 3"
+- assertVisible: "Detail View"
+- assertVisible: "Item 3"
+- tapOn: "Close"
