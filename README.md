@@ -542,47 +542,49 @@ let model = SettingsModel(storage: MockStorage())
 
 ## Local State (@State) Guidelines
 
-### When to Use @State
+### The Principle
 
-Use for **ephemeral UI state** that doesn't affect business logic:
+One question: **Does this state need to escape the View lifecycle?**
+
+| Answer | Use | Survives View disappearing? |
+|--------|-----|----------------------------|
+| Yes | Model (external state) | ✓ |
+| No | @State (local state) | ✗ |
+
+### Examples
+
+**Escaping state** (use Model):
+- User data, items, settings
+- Navigation path
+- Loading/error state
+
+**Local state** (use @State):
+- Animation progress
+- Text field focus
+- Tooltip visibility
 
 ```swift
 struct FormView: View {
-  let model: FormModel
+  let model: FormModel                        // Escaping: survives
 
-  @State private var isAnimating = false      // Animation
-  @State private var showTooltip = false      // Temporary UI
-  @FocusState private var focusedField: Field? // Focus
+  @State private var isAnimating = false      // Local: dies with View
+  @FocusState private var focusedField: Field? // Local: dies with View
 }
 ```
 
-### When NOT to Use @State
-
-Do NOT use for:
-- Business data → Model
-- Navigation state → Model
-- Shared state → Model
-- State that survives view recreation → Model
+### Common Mistake
 
 ```swift
-// BAD
+// BAD: items should escape, but @State dies with View
 struct HomeView: View {
-  @State var items: [Item] = []  // Should be in Model
+  @State var items: [Item] = []
 }
 
-// GOOD
+// GOOD: Model owns escaping state
 struct HomeView: View {
-  let model: HomeModel  // Model owns items
+  let model: HomeModel  // model.items survives
 }
 ```
-
-### Escaping vs Local State
-
-| Scenario | Use |
-|----------|-----|
-| Shared across screens | Model (Escaping) |
-| Survives navigation | Model (Escaping) |
-| Ephemeral UI only | `@State` (Local) |
 
 ---
 
