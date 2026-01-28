@@ -158,6 +158,84 @@ Concept:        intended state →  rendered state
 
 **Model is what should be. View is what you see.**
 
+### Model and View: A Universal Pattern
+
+The same relationship appears across many domains:
+
+| Domain | Model (Entity) | View (Projection) |
+|--------|---------------|-------------------|
+| **3D Graphics** | 3D mesh data | 2D screen rendering |
+| **SQL Database** | Table | View (query result) |
+| **CALayer** | model layer | presentation layer |
+| **SwiftUI** | Model | View |
+
+The essence:
+
+```
+Model = Higher-dimensional entity
+View  = Projection to lower dimension
+```
+
+A 3D model projected through a camera becomes a 2D image. App state projected through SwiftUI becomes pixels on screen.
+
+### Why "Projection" is Literally Correct
+
+In type theory, structs/classes are **product types**—each property multiplies the dimensional space:
+
+```swift
+struct User {
+  var name: String   // |String| ≈ ∞
+  var age: Int       // |Int| ≈ 2^64
+  var isActive: Bool // 2
+}
+// State space = ∞ × 2^64 × 2 = astronomical
+```
+
+A real Model has even more:
+
+```swift
+@Observable
+class AppModel {
+  var selectedTab: Tab           // 4 possible values
+  var items: [Item]              // ∞ possible arrays
+  var detailModel: DetailModel?  // ∞ + 1 (nil)
+  var isLoading: Bool            // 2
+}
+// Dimensional space: 4 × ∞ × ∞ × 2 = hyper-dimensional
+```
+
+The View displays **one point** in this hyper-dimensional state space, projected onto a 2D screen.
+
+```
+Model: Hyper-dimensional state space (all possible states)
+          │
+          │ projection (current moment)
+          ↓
+View:  2D pixels on screen
+```
+
+This is why "projection" is not a metaphor—it's mathematically accurate.
+
+### Model and View are Relative
+
+Model and View are not absolute categories—they are relative relationships.
+
+```
+Database Tables
+    ↓ projection
+Domain Model      ← View of DB, Model for UI
+    ↓ projection
+UI Model          ← View of Domain, Model for SwiftUI
+    ↓ projection
+SwiftUI View      ← View of UI Model
+    ↓ projection
+Pixels
+```
+
+**What serves as a View to one layer becomes a Model to the next.**
+
+Like strategy and tactics: a general's "tactics" is a colonel's "strategy." The same action is both, depending on perspective.
+
 ### UI Model vs Domain Model
 
 ```
