@@ -9,15 +9,15 @@ import SwiftUI
 
 @main
 struct ModelArchitectureApp: App {
-  // Note: Using @State with @Observable class works in iOS 17+ because:
-  // 1. @State ensures single instance across view recreations
-  // 2. @Observable provides fine-grained observation
-  // This is the recommended pattern for root-level app state in SwiftUI.
-  @State private var appModel = AppModel()
+  /// The single root UIModel retained for the lifetime of this scene.
+  @State private var uiModel = AppUIModel()
 
   var body: some Scene {
     WindowGroup {
-      RootView(model: appModel)
+      AppRootView(uiModel: uiModel)
+        .onOpenURL { url in
+          uiModel.handle(url: url)
+        }
     }
   }
 }

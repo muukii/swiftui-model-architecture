@@ -1,8 +1,0 @@
-appId: app.muukii.ModelArchitecture
----
-- launchApp
-- tapOn: "Item 1"
-- assertVisible: "Detail View"
-- assertVisible: "Item 1"
-- tapOn: "Close"
-- assertNotVisible: "Detail View"
