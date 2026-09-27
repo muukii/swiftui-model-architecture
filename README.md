@@ -1,628 +1,195 @@
-# Model-Driven Architecture for SwiftUI
+# UIModel Routing Architecture for SwiftUI
 
-A SwiftUI architecture built on the principle: **"Model's Existence = Screen's Existence"**
+This repository is a small SwiftUI prototype for representing app-level routing as an explicit **UIModel tree**.
 
-Using Swift's Observation framework (`@Observable`, `@Bindable`) to create explicit, testable, and predictable UI state management.
+The demo uses a fictional community app with authentication, initial setup, four retained tabs, deep links, app-wide presentations, and restricted states. Names and sample content are deliberately generic so the architecture can be discussed publicly without depending on a real product.
 
----
+## The idea
 
-## Table of Contents
+Navigation is larger than a single `NavigationPath`. A production-shaped app may have all of these at once:
 
-- [Core Concept](#core-concept)
-- [Getting Started](#getting-started)
-- [What is "Model"?](#what-is-model)
-- [Model Graph](#model-graph)
-- [Patterns](#patterns)
-  - [Sheet Navigation](#1-sheet-navigation)
-  - [Confirmation Dialog](#2-confirmation-dialog)
-  - [NavigationStack](#3-navigationstack)
-  - [Model-per-Screen](#4-model-per-screen)
-  - [TabView](#5-tabview)
-  - [Async Operations](#6-async-operations)
-  - [Dependency Injection](#7-dependency-injection)
-- [Local State (@State) Guidelines](#local-state-state-guidelines)
-- [Demo App](#demo-app)
-- [Requirements](#requirements)
+- a session boundary such as signed out or signed in;
+- a setup or preparation gate before the main UI is ready;
+- several tab roots that remain alive while another tab is visible;
+- an independent navigation stack in each tab;
+- app-wide sheets and blocking layers;
+- external requests that arrive before their destination can be shown.
 
----
+The prototype models that shape explicitly:
 
-## Core Concept
+```text
+external URL or app event
+          |
+          v
+       UIIntent                 one-shot request
+          |
+          v
+      AppUIModel                persistent UI state
+      |-- session
+      |   |-- signedOut
+      |   `-- signedIn
+      |       |-- setup
+      |       `-- main
+      |           |-- preparing
+      |           |-- tabs
+      |           `-- restricted
+      |-- pendingIntent?
+      |-- sheet?
+      `-- blockingNotice?
+```
 
-### The Rule
+SwiftUI then projects this state into views.
 
-> If a Model exists (is not nil), the corresponding screen should be displayed.
-> If a Model is nil, the corresponding screen should be hidden.
+## Why `UIModel`?
+
+`ViewModel` often suggests one helper object per view. Here, the object has a different responsibility: it describes the intended UI topology, owns the lifetimes of child UI scopes, and handles transitions between them. `UIModel` makes that role explicit while leaving domain models independent of the UI.
+
+The central rule is slightly more precise than “model existence equals screen visibility”:
+
+> A UIModel's existence means that its UI scope is retained. Selection and presentation state determine whether that scope is currently visible.
+
+That distinction matters for tabs. All four tab UIModels can continue to exist while only one tab is selected, preserving each tab's navigation stack.
+
+## `UIIntent` and `UIModel` are different
+
+A `UIIntent` is a one-shot request:
 
 ```swift
-@Observable
-class HomeModel {
-  var detailModel: DetailModel?  // nil = no detail screen
-
-  func showDetail(item: Item) {
-    detailModel = DetailModel(item: item)  // Creates screen
-  }
-
-  func dismissDetail() {
-    detailModel = nil  // Destroys screen
-  }
+enum UIIntent {
+  case openStory(id: String)
+  case showActivity(filter: ActivityFilter)
+  case openConversation(id: String)
+  case openPreferences
+  case showAnnouncement
 }
 ```
 
-### The Inversion
+The UIModel tree is the durable result after that request is interpreted. For example, `openConversation` selects the Messages tab and installs a conversation UIModel in that tab's canonical navigation path. The intent does not remain the source of truth after routing finishes.
 
-```
-Traditional SwiftUI:
-  View creates ViewModel → View controls navigation → State scattered
+If the app is not ready, the root stores the intent as `pendingIntent`. Authentication, setup, and preparation continue normally; the intent is replayed when the tab container is available.
 
-Model-Driven Architecture:
-  Model Graph defines state → Views reflect state → Single source of truth
-```
-
-### Benefits
-
-| Benefit | Description |
-|---------|-------------|
-| **Explicit Lifecycle** | Model creation = screen creation. No ambiguity. |
-| **Testable** | Unit test navigation and business rules without UI |
-| **Predictable** | Any screen state can be inspected and reproduced |
-| **SwiftUI Native** | Built on `@Observable`, `@Bindable`, standard APIs |
-
----
-
-## Getting Started
-
-Align the root of your Model Graph with the root of your View hierarchy.
-
-### Step 1: Define the Model Graph Root
-
-```swift
-@Observable
-class AppModel {
-  // Your app's state starts here
-}
+```text
+deep link
+   |
+   v
+UIIntent ---- app not ready ----> pendingIntent
+   |                                  |
+   | app ready                        | readiness changes
+   v                                  v
+mutate the UIModel tree <-------------+
 ```
 
-### Step 2: Create and Hold at App Entry Point
+## Demo topology
 
-```swift
-@main
-struct MyApp: App {
-  @State private var appModel = AppModel()
+The sample exercises the following states:
 
-  var body: some Scene {
-    WindowGroup {
-      RootView(model: appModel)
-    }
-  }
-}
+```text
+AppUIModel
+|-- session
+|   |-- signedOut(SignInUIModel)
+|   `-- signedIn(SignedInUIModel)
+|       |-- setup(ProfileSetupUIModel)
+|       `-- main(MainUIModel)
+|           |-- preparing
+|           |-- tabs(TabContainerUIModel)
+|           |   |-- HomeUIModel
+|           |   |-- ActivityUIModel
+|           |   |-- MessagesUIModel
+|           |   `-- AccountUIModel
+|           `-- restricted
+|-- sheet?
+|-- blockingNotice?
+`-- pendingIntent?
 ```
 
-### Step 3: Receive in Root View
+The four tab UIModels are retained together. Each owns its own typed path, so switching tabs does not destroy another tab's navigation history. App-level presentation state lives above the tabs because it is not part of any one stack.
 
-```swift
-struct RootView: View {
-  let model: AppModel
+## What remains local to a view
 
-  var body: some View {
-    // Build View tree from Model Graph
-  }
-}
+The architecture does not move every piece of screen state into the UIModel tree.
+
+Use a UIModel when state must outlive a particular view instance, participate in routing, or be controlled externally. Keep ephemeral interaction state in a stateful SwiftUI host.
+
+| State | Owner |
+|---|---|
+| session, selected tab, paths, presentations | UIModel tree |
+| pending external route | root UIModel |
+| fetched content needed after view recreation | feature UIModel |
+| text-field focus, draft interaction, animation phase | stateful host view |
+| value rendering and action closures | state view |
+
+Conceptually:
+
+```text
+External State
+`-- Stateful View
+    `-- State View
 ```
 
-### The Connection Point
+This keeps the externally controllable shape explicit without turning transient SwiftUI mechanics into global state.
 
-```
-App (Entry Point)
-    │
-    ├── @State appModel ← Model Graph root
-    │
-    └── WindowGroup
-            └── RootView(model: appModel) ← Connection
-                    │
-                    └── View Tree
-```
+## Running the prototype
 
----
+Open `ModelArchitecture.xcodeproj` in Xcode and run the `ModelArchitecture` scheme on an iOS Simulator.
 
-## What is "Model"?
+The normal path through the demo is:
 
-### The Overloaded Term
+1. Tap **Sign In**.
+2. Complete the two setup steps with **Continue** and **Finish Setup**.
+3. Leave the preparation gate with **Enter App**.
+4. Explore the retained **Home**, **Activity**, **Messages**, and **Account** tabs.
 
-"Model" appears in many contexts:
+The floating **Route Lab** button exposes the same routing entry point used by deep links. It can open destinations, show app-level presentations, enter restricted mode, and display a blocking notice. The lab also makes the current UIModel tree and any pending intent observable while experimenting.
 
-| Context | Meaning |
-|---------|---------|
-| MVC | Domain data and business logic |
-| Core Data | Data schema (NSManagedObjectModel) |
-| CALayer | Target state (vs presentation layer) |
-| **This Architecture** | **UI state structure** |
+## Deep links
 
-### The Common Essence
-
-> **Model = Source of Truth**
-
-CALayer illustrates this well:
-
-```swift
-layer.position = CGPoint(x: 100, y: 100)  // model layer (target)
-layer.presentation()?.position             // presentation layer (current)
-```
-
-In this architecture:
-
-```
-CALayer:        model layer    →  presentation layer
-This arch:      UI Model       →  SwiftUI View
-Concept:        intended state →  rendered state
-```
-
-**Model is what should be. View is what you see.**
-
-### Model and View: A Universal Pattern
-
-The same relationship appears across many domains:
-
-| Domain | Model (Entity) | View (Projection) |
-|--------|---------------|-------------------|
-| **3D Graphics** | 3D mesh data | 2D screen rendering |
-| **SQL Database** | Table | View (query result) |
-| **CALayer** | model layer | presentation layer |
-| **SwiftUI** | Model | View |
-
-The essence:
-
-```
-Model = Higher-dimensional entity
-View  = Projection to lower dimension
-```
-
-A 3D model projected through a camera becomes a 2D image. App state projected through SwiftUI becomes pixels on screen.
-
-### Why "Projection" is Literally Correct
-
-In type theory, structs/classes are **product types**—each property multiplies the dimensional space:
-
-```swift
-struct User {
-  var name: String   // |String| ≈ ∞
-  var age: Int       // |Int| ≈ 2^64
-  var isActive: Bool // 2
-}
-// State space = ∞ × 2^64 × 2 = astronomical
-```
-
-A real Model has even more:
-
-```swift
-@Observable
-class AppModel {
-  var selectedTab: Tab           // 4 possible values
-  var items: [Item]              // ∞ possible arrays
-  var detailModel: DetailModel?  // ∞ + 1 (nil)
-  var isLoading: Bool            // 2
-}
-// Dimensional space: 4 × ∞ × ∞ × 2 = hyper-dimensional
-```
-
-The View displays **one point** in this hyper-dimensional state space, projected onto a 2D screen.
-
-```
-Model: Hyper-dimensional state space (all possible states)
-          │
-          │ projection (current moment)
-          ↓
-View:  2D pixels on screen
-```
-
-This is why "projection" is not a metaphor—it's mathematically accurate.
-
-### Model and View are Relative
-
-Model and View are not absolute categories—they are relative relationships.
-
-```
-Database Tables
-    ↓ projection
-Domain Model      ← View of DB, Model for UI
-    ↓ projection
-UI Model          ← View of Domain, Model for SwiftUI
-    ↓ projection
-SwiftUI View      ← View of UI Model
-    ↓ projection
-Pixels
-```
-
-**What serves as a View to one layer becomes a Model to the next.**
-
-Like strategy and tactics: a general's "tactics" is a colonel's "strategy." The same action is both, depending on perspective.
-
-### UI Model vs Domain Model
-
-```
-┌─────────────────────────────────────────┐
-│  Domain Model                            │
-│  - User, Order, Product                 │
-│  - Business rules                       │
-│  - Independent of UI                    │
-└─────────────────────────────────────────┘
-                ↓ referenced by
-┌─────────────────────────────────────────┐
-│  UI Model (= "Model" here)              │
-│  - SheetsTabModel, NavigationTabModel   │
-│  - UI state (what screens are shown)    │
-│  - Screen-specific data and actions     │
-└─────────────────────────────────────────┘
-                ↓ projected to
-┌─────────────────────────────────────────┐
-│  SwiftUI View                            │
-│  - Renders based on UI Model state      │
-└─────────────────────────────────────────┘
-```
-
----
-
-## Model Graph
-
-### Why "Graph" not "Tree"?
-
-- **Ownership** follows a tree structure (parent owns children)
-- **References** can go any direction (callbacks, delegates)
-- Including references, it's a **graph**
-
-### Structure
-
-```
-AppModel (root)
-├── selectedTab: Tab
-├── sheetsTabModel
-│   ├── items: [Item]
-│   ├── detailModel?          ← "Detail screen can exist here"
-│   └── deleteConfirmation?   ← "Dialog can exist here"
-└── navigationTabModel
-    ├── path: [Destination]
-    └── itemDetailModels: [ID: Model]  ← Cached Models
-```
-
-The **structure** defines what's possible. The **values** define current state.
-
-### State Space
-
-```
-Model Graph ≠ "What is currently displayed"
-Model Graph = "The shape of possible states"
-```
-
----
-
-## Patterns
-
-### 1. Sheet Navigation
-
-Model's optional property controls sheet presentation:
-
-```swift
-@Observable
-class ParentModel {
-  var childModel: ChildModel?
-
-  func showChild() {
-    childModel = ChildModel()
-  }
-
-  func dismissChild() {
-    childModel = nil
-  }
-}
-
-struct ParentView: View {
-  @Bindable var model: ParentModel
-
-  var body: some View {
-    Button("Show") { model.showChild() }
-      .sheet(item: $model.childModel) { child in
-        ChildView(model: child)
-      }
-  }
-}
-```
-
-### 2. Confirmation Dialog
-
-Optional property controls dialog visibility and carries associated data:
-
-```swift
-@Observable
-class HomeModel {
-  var deleteConfirmation: Item?  // nil = no dialog
-
-  func requestDelete(_ item: Item) {
-    deleteConfirmation = item
-  }
-
-  func executeDelete() {
-    guard let item = deleteConfirmation else { return }
-    items.removeAll { $0.id == item.id }
-    deleteConfirmation = nil
-  }
-}
-
-struct HomeView: View {
-  @Bindable var model: HomeModel
-
-  var body: some View {
-    List { ... }
-      .confirmationDialog(
-        "Delete Item",
-        isPresented: Binding(
-          get: { model.deleteConfirmation != nil },
-          set: { if !$0 { model.deleteConfirmation = nil } }
-        ),
-        presenting: model.deleteConfirmation
-      ) { item in
-        Button("Delete \(item.name)", role: .destructive) {
-          model.executeDelete()
-        }
-      }
-  }
-}
-```
-
-### 3. NavigationStack
-
-Path array controls navigation stack:
-
-```swift
-@Observable
-class NavigationModel {
-  enum Destination: Hashable {
-    case detail(Item)
-    case settings
-  }
-
-  var path: [Destination] = []
-
-  func push(_ dest: Destination) {
-    path.append(dest)
-  }
-
-  func popToRoot() {
-    path.removeAll()
-  }
-}
-
-struct ContentView: View {
-  @Bindable var model: NavigationModel
-
-  var body: some View {
-    NavigationStack(path: $model.path) {
-      ListView()
-        .navigationDestination(for: NavigationModel.Destination.self) { dest in
-          switch dest {
-          case .detail(let item): DetailView(item: item)
-          case .settings: SettingsView()
-          }
-        }
-    }
-  }
-}
-```
-
-### 4. Model-per-Screen
-
-Cache Models for screens that need their own state:
-
-```swift
-@Observable
-class AppModel {
-  var path: [Destination] = []
-  private var detailModels: [Item.ID: DetailModel] = [:]
-
-  func detailModel(for item: Item) -> DetailModel {
-    if let existing = detailModels[item.id] {
-      return existing
-    }
-    let model = DetailModel(item: item)
-    detailModels[item.id] = model
-    return model
-  }
-
-  // Clean up when navigating away
-  private func cleanupUnusedModels() {
-    let activeIDs = Set(path.compactMap { dest -> Item.ID? in
-      if case .detail(let item) = dest { return item.id }
-      return nil
-    })
-    detailModels = detailModels.filter { activeIDs.contains($0.key) }
-  }
-}
-```
-
-### 5. TabView
-
-Lazy initialization for tab Models:
-
-```swift
-@Observable
-class AppModel {
-  enum Tab { case home, search, profile }
-  var selectedTab: Tab = .home
-
-  private var _homeModel: HomeModel?
-  private var _searchModel: SearchModel?
-
-  var homeModel: HomeModel {
-    if _homeModel == nil { _homeModel = HomeModel() }
-    return _homeModel!
-  }
-
-  var searchModel: SearchModel {
-    if _searchModel == nil { _searchModel = SearchModel() }
-    return _searchModel!
-  }
-}
-
-struct RootView: View {
-  @Bindable var model: AppModel
-
-  var body: some View {
-    TabView(selection: $model.selectedTab) {
-      HomeView(model: model.homeModel)
-        .tag(AppModel.Tab.home)
-      SearchView(model: model.searchModel)
-        .tag(AppModel.Tab.search)
-    }
-  }
-}
-```
-
-### 6. Async Operations
-
-Loading state and error handling in Model:
-
-```swift
-@Observable
-class DataModel {
-  var items: [Item] = []
-  var isLoading = false
-  var errorAlert: ErrorInfo?
-
-  struct ErrorInfo: Identifiable {
-    let id = UUID()
-    let message: String
-  }
-
-  @MainActor
-  func loadItems() async {
-    isLoading = true
-    defer { isLoading = false }
-
-    do {
-      items = try await api.fetchItems()
-    } catch {
-      errorAlert = ErrorInfo(message: error.localizedDescription)
-    }
-  }
-}
-```
-
-### 7. Dependency Injection
-
-Inject dependencies via initializer:
-
-```swift
-protocol Storage {
-  var theme: Theme { get set }
-}
-
-@Observable
-class SettingsModel {
-  private let storage: Storage
-
-  var theme: Theme
-
-  init(storage: Storage) {
-    self.storage = storage
-    self.theme = storage.theme
-  }
-
-  func save() {
-    var s = storage
-    s.theme = theme
-  }
-}
-
-// Production
-let model = SettingsModel(storage: UserDefaultsStorage())
-
-// Testing
-let model = SettingsModel(storage: MockStorage())
-```
-
----
-
-## Local State (@State) Guidelines
-
-### The Principle
-
-One question: **Does this state need to escape the View lifecycle?**
-
-| Answer | Use | Survives View disappearing? |
-|--------|-----|----------------------------|
-| Yes | Model (external state) | ✓ |
-| No | @State (local state) | ✗ |
-
-### Examples
-
-**Escaping state** (use Model):
-- User data, items, settings
-- Navigation path
-- Loading/error state
-
-**Local state** (use @State):
-- Animation progress
-- Text field focus
-- Tooltip visibility
-
-```swift
-struct FormView: View {
-  let model: FormModel                        // Escaping: survives
-
-  @State private var isAnimating = false      // Local: dies with View
-  @FocusState private var focusedField: Field? // Local: dies with View
-}
-```
-
-### Common Mistake
-
-```swift
-// BAD: items should escape, but @State dies with View
-struct HomeView: View {
-  @State var items: [Item] = []
-}
-
-// GOOD: Model owns escaping state
-struct HomeView: View {
-  let model: HomeModel  // model.items survives
-}
-```
-
----
-
-## Demo App
-
-The demo app demonstrates all patterns:
-
-```
-ModelArchitecture/
-├── Models/
-│   ├── AppModel.swift           # Root + TabView + Lazy init
-│   ├── SheetsTabModel.swift     # Sheet + Confirmation Dialog
-│   ├── NavigationTabModel.swift # NavigationStack + Model-per-Screen
-│   ├── AsyncTabModel.swift      # Async + Loading + Error
-│   └── SettingsTabModel.swift   # Dependency Injection
-└── Views/
-    ├── RootView.swift           # TabView
-    ├── SheetsTabView.swift
-    ├── NavigationTabView.swift
-    ├── AsyncTabView.swift
-    └── SettingsTabView.swift
-```
-
-### Run
+The app registers the `uimodel-demo` URL scheme. These examples can be opened from Terminal while the app is installed in the booted simulator:
 
 ```bash
-# Build
-xcodebuild -scheme ModelArchitecture \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+xcrun simctl openurl booted 'uimodel-demo://home'
+xcrun simctl openurl booted 'uimodel-demo://home/story/story-1'
+xcrun simctl openurl booted 'uimodel-demo://activity/mentions'
+xcrun simctl openurl booted 'uimodel-demo://messages/conversation/conversation-1'
+xcrun simctl openurl booted 'uimodel-demo://account/preferences'
+xcrun simctl openurl booted 'uimodel-demo://announcement/welcome'
+```
 
-# Run Maestro UI tests
+Try opening a destination URL before signing in. The app should retain it as a pending intent and apply it only after the setup and preparation gates have completed.
+
+## Building from the command line
+
+```bash
+xcodebuild \
+  -project ModelArchitecture.xcodeproj \
+  -scheme ModelArchitecture \
+  -sdk iphonesimulator \
+  -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```
+
+## Maestro flows
+
+The UI flows cover the ordinary session-to-tabs journey and routing from the Route Lab. With the app installed on a simulator:
+
+```bash
 maestro test Maestro/flows/
 ```
 
----
+The flows use visible labels for user journeys and the `route-lab-button` accessibility identifier for the developer entry point.
+
+## Design boundaries
+
+This project is intentionally a routing prototype, not a complete application architecture.
+
+- Domain entities and persistence are sample-only.
+- `UIIntent` is an input vocabulary, not a second state store.
+- A path is appropriate for an ordered stack, but it is not expected to encode the entire app.
+- App-wide sheets and blocking UI are modeled separately from per-tab stacks.
+- The example favors explicit transitions and inspectable state over framework abstraction.
 
 ## Requirements
 
-- iOS 17.0+
-- Xcode 15.0+
-- Swift 5.9+
+- Xcode with Swift Observation support
+- iOS 17 or later
+- Maestro only when running the optional UI flows

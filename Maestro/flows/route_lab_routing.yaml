@@ -1,0 +1,28 @@
+appId: app.muukii.ModelArchitecture
+name: Route from the developer lab
+---
+- launchApp:
+    clearState: true
+- tapOn: "Sign In"
+- tapOn: "Continue"
+- tapOn: "Finish Setup"
+- tapOn: "Enter App"
+
+- tapOn:
+    id: "route-lab-button"
+- assertVisible: "Route Lab"
+- assertVisible: "Open Featured Story"
+- assertVisible: "Open Mentions"
+- assertVisible: "Open Conversation"
+- assertVisible: "Open Preferences"
+- assertVisible: "Show Announcement"
+- assertVisible: "Enter Restricted Mode"
+- assertVisible: "Show Blocking Notice"
+
+- tapOn: "Open Mentions"
+- assertVisible: "Mentions"
+
+- tapOn:
+    id: "route-lab-button"
+- tapOn: "Open Preferences"
+- assertVisible: "Preferences"

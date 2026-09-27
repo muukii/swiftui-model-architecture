@@ -1,0 +1,17 @@
+appId: app.muukii.ModelArchitecture
+name: Replay a deep link after readiness gates
+---
+- launchApp:
+    clearState: true
+
+# The destination cannot be rendered yet, so its UIIntent remains pending.
+- openLink: "uimodel-demo://account/preferences"
+- assertVisible: "Sign In"
+
+- tapOn: "Sign In"
+- tapOn: "Continue"
+- tapOn: "Finish Setup"
+- tapOn: "Enter App"
+
+# The pending intent is consumed once the retained tab container exists.
+- assertVisible: "Preferences"

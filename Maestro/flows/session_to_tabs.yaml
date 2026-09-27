@@ -1,0 +1,25 @@
+appId: app.muukii.ModelArchitecture
+name: Complete setup and visit every retained tab
+---
+- launchApp:
+    clearState: true
+
+- assertVisible: "Sign In"
+- tapOn: "Sign In"
+- tapOn: "Continue"
+- tapOn: "Finish Setup"
+- tapOn: "Enter App"
+
+# All four roots are retained even though only one is selected.
+- assertVisible: "Home"
+- assertVisible: "Activity"
+- assertVisible: "Messages"
+- assertVisible: "Account"
+
+- tapOn: "Activity"
+- tapOn: "Messages"
+- tapOn: "Account"
+- tapOn: "Home"
+
+- assertVisible:
+    id: "route-lab-button"
